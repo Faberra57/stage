@@ -8,6 +8,16 @@ from numpy.linalg import pinv
 from sklearn.neighbors import NearestNeighbors
 from tqdm import tqdm
 
+def set_working_directory(working_directory):
+    """
+    Set the working directory for the script.
+    
+    Parameters:
+    working_directory (str): Path to the working directory.
+    """
+    os.chdir(working_directory)
+    print(f"Working directory set to: {working_directory}")
+
 def create_database(data, p, overlapping=False):
     """
     Create a database of p continuous values with or without overlapping.
@@ -98,9 +108,6 @@ def split_data(working_directory,processed_data_folder,run_list,p):
         parquet_path = os.path.join(processed_data_folder, f"{run}_p={p}.parquet")
         df.to_parquet(parquet_path, engine="pyarrow", compression="snappy")
 
-
-
-
 def prediction_neighbors(data, db, k, stride=1, weighting=True, normalize=False):
     """
     Predicts future values using a weighted nearest neighbors approach.
@@ -157,7 +164,7 @@ def prediction_neighbors(data, db, k, stride=1, weighting=True, normalize=False)
     
     return vals, weighted_covariance
 
-def open_data(path,run,p):
+def open_data(folder,run,p):
     """
     Opens data from a specified path.
     
@@ -168,6 +175,7 @@ def open_data(path,run,p):
     Returns:
     DataFrame with data.
     """
-    data = pd.read_parquet(path + f"run_{run}.parquet")
-    t = np.arange(data.shape[0]) / 1000
-    return data, t
+    run = str(run).zfill(2)
+    path = os.path.join(folder, f"run{run}_p={p}.parquet")
+    data = pd.read_parquet(path, engine="pyarrow")
+    return data
