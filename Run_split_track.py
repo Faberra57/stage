@@ -10,6 +10,7 @@ if __name__ == "__main__":
     os.chdir(working_directory)
     run_training = ['run01', 'run02', 'run03', 'run04', 'run05']
     var = ['v', 'u', 'w','ax', 'ay', 'az','Drivas']
+    p = 3 #size of the tuples
     for run in run_training:
         print("Run: ", run)
         # Load the data
@@ -31,15 +32,15 @@ if __name__ == "__main__":
 
 
         print("Splitting the tracks...")
-        db_3 = np.zeros((len(var),(dim_point//3)+1,3)) #(dim_point//3)+1 for not being to memory expensive and reshape it later
+        db_3 = np.zeros((len(var),(dim_point//p)+1,p)) #(dim_point//p)+1 for not being to memory expensive and reshape it later
         # df_3[i,j,k]  
         # i -> feature (v, u, w, ax, ay, az, Drivas)
-        # j -> list of 3 values of the feature 
-        # k -> point of the list of 3 values of the feature 
+        # j -> list of p values of the feature 
+        # k -> point of the list of p values of the feature 
 
         #slipt the track
 
-        #Because the size of each track is not divisible by 3, 
+        #Because the size of each track is not divisible by p, 
         #we need to keep track of the last filled line in db_3
         last_line_filled = 0 
 
@@ -48,17 +49,17 @@ if __name__ == "__main__":
             end_track = track_ini[i+1] 
             for j, var_name in enumerate(var):
                 data = db_2[j, start_track:end_track]
-                data = tk.create_database(data, 3, overlapping=False)
+                data = tk.create_database(data, p, overlapping=False)
                 db_3[j, last_line_filled:last_line_filled+data.shape[0],:] = data.astype(float)
             last_line_filled += data.shape[0]
 
         db_3 = db_3[:,:last_line_filled,:] #remove the empty lines
         print("Saving the data...")
-        columns = [f"{var[j]}_{k}" for j in range(len(var)) for k in range(3)]
+        columns = [f"{var[j]}_{k}" for j in range(len(var)) for k in range(p)]
         db_3_reshaped = db_3.reshape(db_3.shape[1], -1) 
         # an example of the columns:
         # v_0   v_1   v_2   u_0   u_1   u_2   w_0   w_1   w_2   ax_0  ax_1  ax_2   ay_0  ay_1  ay_2   az_0  az_1  az_2   Drivas_0  Drivas_1  Drivas_2
         df = pd.DataFrame(db_3_reshaped,columns=columns)
-        parquet_path = os.path.join("Slipt_Tracks", f"{run}_db_3.parquet")
+        parquet_path = os.path.join("Slipt_Tracks", f"{run}_{p}.parquet")
         df.to_parquet(parquet_path, engine="pyarrow", compression="snappy")
 
