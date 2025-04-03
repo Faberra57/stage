@@ -2,26 +2,7 @@ import netCDF4 as nc
 import numpy as np
 import pandas as pd
 import os
-
-def create_database(data, p, overlapping=False):
-    """
-    Create a database of p continuous values with or without overlapping.
-
-    Parameters:
-    data (array-like): Input data series.
-    p (int): The size of the tuples.
-    overlapping (bool): Whether the tuples should overlap.
-
-    Returns:
-    np.ndarray: The database of tuples.
-    """
-    # Create sliding window view of the data with window size p+1
-    window = np.lib.stride_tricks.sliding_window_view(data, window_shape=(p,))
-    # Set stride based on overlapping flag
-    stride = 1 if overlapping else p
-    # Select windows based on the stride
-    db = window[0::stride, :]
-    return db
+import Toolkit as tk
 
 if __name__ == "__main__":
     # Set the working directory and run
@@ -67,7 +48,7 @@ if __name__ == "__main__":
             end_track = track_ini[i+1] 
             for j, var_name in enumerate(var):
                 data = db_2[j, start_track:end_track]
-                data = create_database(data, 3, overlapping=False)
+                data = tk.create_database(data, 3, overlapping=False)
                 db_3[j, last_line_filled:last_line_filled+data.shape[0],:] = data.astype(float)
             last_line_filled += data.shape[0]
 
