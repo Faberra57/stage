@@ -2,7 +2,7 @@ import netCDF4 as nc
 import numpy as np
 import pandas as pd
 import os
-import Toolkit as tk
+import toolkit as tk
 
 if __name__ == "__main__":
     # Set the working directory and run

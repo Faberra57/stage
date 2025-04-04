@@ -1,4 +1,4 @@
-import Toolkit as tk
+import toolkit as tk
 
 if __name__ == "__main__":
    working_directory="/Volumes/T7 Shield/ALEAS/"
