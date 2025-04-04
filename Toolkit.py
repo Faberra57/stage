@@ -6,6 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from numpy.linalg import pinv
 from sklearn.neighbors import NearestNeighbors
+from sklearn.metrics import mean_squared_error
 from tqdm import tqdm
 
 def set_working_directory(working_directory):
@@ -157,7 +158,7 @@ def create_database(data, p, overlapping=False):
     db = window[0::stride, :]
     return db
 
-def split_data(nb_run,p, filtered_data_folder, processed_data_folder):
+def split_data(nb_run,p, filtered_data_folder, split_data_folder):
 
     """
     Splits the data into smaller segments for processing.
@@ -166,9 +167,12 @@ def split_data(nb_run,p, filtered_data_folder, processed_data_folder):
     nb_run (int): Run number to process.
     p (int): Size of the segments.
     filtered_data_folder (str):Folder containing filtered data.
-    processed_data_folder (str): Folder where processed data will be saved.
+    split_data_folder (str): Folder where processed data will be saved.
     """
-
+    
+    if os.path.exists(os.path.join(split_data_folder, f"p={p}")):
+        print(f"P={p} already processed. Skipping run {nb_run}.")
+        return
     var = ['v', 'u', 'w','ax', 'ay', 'az','Drivas']
     run = "run" + str(nb_run).zfill(2)
     print("Run: ", nb_run)
@@ -226,34 +230,46 @@ def split_data(nb_run,p, filtered_data_folder, processed_data_folder):
     # v_0   v_1   v_2   u_0   u_1   u_2   w_0   w_1   w_2   ax_0  ax_1  ax_2   ay_0  ay_1  ay_2   az_0  az_1  az_2   Drivas_0  Drivas_1  Drivas_2
     
     df = pd.DataFrame(db_3_reshaped,columns=columns)
-    if not os.path.exists(processed_data_folder):
-        os.makedirs(processed_data_folder)
-    parquet_path = os.path.join(processed_data_folder, f"{run}_p={p}.parquet")
+    if not os.path.exists(split_data_folder):
+        os.makedirs(split_data_folder)
+
+    if not os.path.exists(os.path.join(split_data_folder, f"p={p}")):
+        os.makedirs(os.path.join(split_data_folder, f"p={p}"))
+
+    parquet_path = os.path.join(split_data_folder,os.path.join(f"p={p}", f"{run}_p={p}.parquet"))
     df.to_parquet(parquet_path, engine="pyarrow", compression="snappy")
 
-def open_data(folder,run,p):
+def load_database(nb_run,p,split_data_folder,filtered_data_folder):
     """
-    Opens data from a specified path.
+    Opens data from a specified path and if it does not exist, it creates the folder and splits the data with the given parameters.
     
     Parameters:
-    path (str): Path to the data folder.
     run (int): Run number for data selection.
+    p (int): Size of the segments.
+    processed_data_folder (str): Folder where processed data is stored.
+    filtered_data_folder (str): Folder where filtered data is stored.
     
     Returns:
-    DataFrame with data.
+    numpy.ndarray: The loaded data as a NumPy array.
     """
-    run = str(run).zfill(2)
-    path = os.path.join(folder, f"run{run}_p={p}.parquet")
+    run = str(nb_run).zfill(2)
+    path = os.path.join(split_data_folder,os.path.join(f"p={p}", f"run{run}_p={p}.parquet"))
+    if not os.path.exists(path):
+        print(f"File {path} does not exist.")
+        print("Creating the folder and splitting the data...")
+        split_data(nb_run, p, filtered_data_folder, split_data_folder)
+        print("Data split and saved.")
     data = pd.read_parquet(path, engine="pyarrow")
-    return data
+    return data.to_numpy()
 
-def prediction_neighbors(db_train,db_test, k, weighting=True, normalize=False):
+def prediction_neighbors(db,ratio_train, k, weighting=True, normalize=False):
+
     """
     Predicts future values using a weighted nearest neighbors approach.
     
     Parameters:
-    db_train (array-like): Training data.
-    db_test (array-like): Test data.
+    db (array-like): Input data series.
+    ratio_train (float): Ratio of training data to total data.
     k (int): Number of neighbors to consider.
     weighting (bool): Whether to apply exponential distance-based weighting.
     normalize (bool): Whether to normalize input sequences before processing.
@@ -261,6 +277,11 @@ def prediction_neighbors(db_train,db_test, k, weighting=True, normalize=False):
     Returns:
     tuple: Predicted values and associated weighted covariance.
     """
+    if ratio_train <= 0 or ratio_train >= 1:
+        raise ValueError("ratio_train must be between 0 and 1.")
+    db_train = db[:int(db.shape[0]*ratio_train)]
+    db_test = db[int(db.shape[0]*ratio_train):]
+
     _, pp1 = db_train.shape
     p = pp1// 7
 
@@ -294,8 +315,10 @@ def prediction_neighbors(db_train,db_test, k, weighting=True, normalize=False):
 
     print("Calculating coefficients...")
     x = db_train[idx, :-1]
-    x_test = db_test[:, :-1]
     y = (weights * db_train[idx, -1])[:, :, np.newaxis]
+    
+    x_test = db_test[:, :-1]
+    y_test = db_test[:, -1]
 
     x = np.pad(x, [(0, 0), (0, 0), (1, 0)], mode='constant', constant_values=1) 
     x_test = np.pad(x_test, [(0, 0), (1, 0)], mode='constant', constant_values=1)
@@ -309,4 +332,36 @@ def prediction_neighbors(db_train,db_test, k, weighting=True, normalize=False):
 
     # if normalize:
     #     vals[(p - 1) * stride + 1:] += puplet_means[:-1]
-    return vals
+    return vals , y_test
+
+def stats_results(y_predicted,y):
+    """
+    Calculate various performance metrics for predicted values.
+    
+    Parameters:
+    y_predicted (array-like): Predicted values.
+    y (array-like): Actual values.
+    
+    Returns:
+    dict: Dictionary containing various performance metrics.
+    """
+    # Calculate the mean squared error
+    mse = mean_squared_error(y, y_predicted)
+    
+    # Calculate the root mean squared error
+    rmse = np.sqrt(mse)
+    
+    # Calculate the correlation coefficient
+    corr = np.corrcoef(y, y_predicted)[0, 1]
+    
+    # Calculate the mean absolute error
+    mae = np.mean(np.abs(y - y_predicted))
+
+    # Calculate the R-squared value
+    ss_res = np.sum((y - y_predicted) ** 2)
+    ss_tot = np.sum((y - np.mean(y)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot)
+
+
+    return [mse, rmse, corr, mae, r_squared]
+        
